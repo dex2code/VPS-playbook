@@ -1,0 +1,26 @@
+---
+name: Lint
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  ansible-lint:
+    name: ansible-lint (production profile)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      # ansible-core==2.22.0 требует Python >= 3.13, на runner'е по умолчанию 3.12
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      # те же пины, что и локально — результаты линта совпадают
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ansible-lint
+        run: ansible-lint --profile production

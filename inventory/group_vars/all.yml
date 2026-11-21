@@ -1,0 +1,5 @@
+# --- Переменные для всех Debian-хостов ---
+
+# Python на удалённых хостах
+# На Debian 10+ python3 предустановлен — Ansible работает без доп. шагов
+ansible_python_interpreter: /usr/bin/python3

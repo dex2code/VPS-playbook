@@ -1,0 +1,17 @@
+[all]
+alpha   ansible_host=alpha.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
+beta    ansible_host=beta.local     ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_ed25519
+gamma   ansible_host=gamma.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
+delta   ansible_host=delta.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_ed25519
+omega   ansible_host=omega.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
+
+[group-1]
+alpha
+beta
+
+[group-2]
+gamma
+delta
+
+[group-3]
+omega

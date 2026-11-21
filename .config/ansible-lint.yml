@@ -1,0 +1,5 @@
+---
+# Конфиг ansible-lint (стандартное расположение: .config/ansible-lint.yml)
+exclude_paths:
+  - .venv/
+  - .ansible/

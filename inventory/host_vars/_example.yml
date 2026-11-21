@@ -1,0 +1,6 @@
+# --- Переменные для конкретного хоста (шаблон) ---
+# Создайте файл с именем хоста, например: inventory/host_vars/vps1.yml
+
+# ansible_user: root
+# deploy_user: admin
+# ansible_ssh_private_key_file: ~/.ssh/my_special_key

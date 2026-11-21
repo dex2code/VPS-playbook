@@ -1,0 +1,33 @@
+- name: Diagnostic playbook (Debian)
+  hosts: all
+  gather_facts: true
+  become: false   # диагностика не требует root; глобально become = false, задаём явно
+
+  pre_tasks:
+    - name: Verify connection
+      ansible.builtin.ping:
+
+    - name: Check if running Debian
+      ansible.builtin.debug:
+        msg: |
+          Distribution: {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
+          Kernel: {{ ansible_facts.kernel }}
+
+  tasks:
+    - name: Show hostname
+      ansible.builtin.debug:
+        msg: "{{ ansible_facts.hostname }}"
+
+    - name: Get system uptime
+      ansible.builtin.command: uptime -p
+      register: uptime_result
+      changed_when: false
+
+    - name: Show uptime
+      ansible.builtin.debug:
+        var: uptime_result.stdout
+
+  post_tasks:
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "=== Diagnostics complete on {{ inventory_hostname }} ==="

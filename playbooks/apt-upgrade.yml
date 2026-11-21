@@ -1,0 +1,62 @@
+---
+# ============================================
+# Плановое обслуживание: обновление, очистка,
+# перезагрузка (обязательно)
+# ============================================
+
+- name: Maintenance — update, cleanup, reboot
+  hosts: all
+  gather_facts: true
+  become: true
+  serial: 1                          # по одному серверу, чтобы не потерять доступ ко всем сразу
+
+  pre_tasks:
+    - name: Warning before maintenance
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} — начинается обслуживание.
+          Сброс кэша обновлений будет выполнен.
+
+  tasks:
+    # --- Обновление пакетов ---
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600         # не обновлять чаще раза в час
+        lock_timeout: 300              # ждать apt-лок, если работает unattended-upgrades
+      register: apt_update_result
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: dist
+        autoremove: true
+        autoclean: true
+        lock_timeout: 300
+      environment:
+        DEBIAN_FRONTEND: noninteractive   # не зависнуть на debconf-вопросах (например grub-pc)
+      register: apt_upgrade_result
+
+    # --- Очистка ---
+    - name: Clean apt cache
+      ansible.builtin.apt:
+        clean: true
+
+    # --- Перезагрузка ---
+    - name: Reboot server
+      ansible.builtin.reboot:
+        msg: "Rebooting after maintenance"
+        connect_timeout: 5
+        reboot_timeout: 300
+        pre_reboot_delay: 30
+        post_reboot_delay: 60
+        # reboot сам ждёт возврата соединения; проверяем, что sshd реально поднялся
+        test_command: systemctl is-active ssh || systemctl is-active sshd
+
+  post_tasks:
+    - name: Post-maintenance summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} — обслуживание завершено.
+          Кэш апдейта: {{ "обновлён" if apt_update_result is changed else "в актуале" }},
+          Пакетов обновлено: {{ apt_upgrade_result.packages | default([], true) | length }},
+          Сервер перезапущен: да
