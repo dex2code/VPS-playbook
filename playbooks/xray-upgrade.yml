@@ -1,0 +1,411 @@
+---
+# ============================================================
+# Обновление xray-core до последнего релиза (XTLS/xray-core)
+#
+# Плей 1 — скачивание релиза на управляющую машину: плей
+#          адресован группе [xray], но все задачи выполняются
+#          локально (connection: local) и только на первом хосте
+#          отбора (xray_lead_host) — GitHub API, проверка SHA256,
+#          распаковка в ~/.cache/xray-upgrade/<os>-<arch>/.
+# Плей 2 — хосты группы [xray] (по SSH, serial: 1): проверки
+#          (включая config.json), остановка сервиса (sudo),
+#          бэкапы *.old, замена файлов, config-тест, запуск
+#          сервиса. При ошибке сервис поднимается; откат к
+#          *.old выполняется только если бэкапы созданы в этом
+#          же прогоне — иначе *.old с прошлого успеха означали
+#          бы тихий downgrade.
+# Плей 3 — очистка ~/.cache/xray-upgrade на управляющей машине
+#          (снова connection: local).
+#
+# Контроль-плеи (1 и 3) сознательно адресованы [xray], а не
+# localhost: implicit localhost исключается --limit, и при
+# --limit vortex плей на localhost был бы пропущен целиком.
+# connection: local выполняет задачи на управляющей машине
+# независимо от limit.
+#
+# Платформа релиза задаётся в host_vars для каждого xray-хоста
+# (inventory/host_vars/<hostname>.yml): из xray_os / xray_arch
+# собирается имя ассета Xray-<xray_os>-<xray_arch>.zip,
+# например Xray-linux-64.zip.
+#
+# Если в группе [xray] хосты разных платформ — запускайте с
+# --limit на хосты одной платформы (перечисление через запятую
+# или глоббы). Скачивание — одно на весь запуск, после
+# успешного обновления каталог ~/.cache/xray-upgrade удаляется.
+# ============================================================
+
+- name: Fetch the latest xray-core release to the controller
+  hosts: xray
+  connection: local      # все задачи плея выполняются на управляющей машине
+  gather_facts: false
+  become: false
+
+  vars:
+    xray_release_api_url: "https://api.github.com/repos/XTLS/xray-core/releases/latest"
+    xray_staging_root: "{{ lookup('env', 'HOME') }}/.cache/xray-upgrade"
+    # первый хост отбора — на нём выполняются контроллерные задачи
+    # (эквивалент run_once без самого run_once: ansible-lint run-once)
+    xray_lead_host: "{{ ansible_play_hosts_all | first }}"
+
+  tasks:
+    - name: Collect xray hosts for this run
+      ansible.builtin.set_fact:
+        xray_run_hosts: "{{ ansible_play_hosts_all }}"
+      when: inventory_hostname == xray_lead_host
+
+    - name: Make sure there are xray hosts to upgrade
+      ansible.builtin.assert:
+        that:
+          - xray_run_hosts | length > 0
+        fail_msg: >-
+          Не выбрано ни одного хоста группы [xray]: добавьте хосты в
+          inventory/hosts.ini или проверьте --limit.
+      when: inventory_hostname == xray_lead_host
+
+    - name: Find xray hosts without platform variables
+      ansible.builtin.set_fact:
+        xray_hosts_missing_platform: "{{ xray_hosts_missing_platform | default([]) + [item] }}"
+      loop: "{{ xray_run_hosts }}"
+      when:
+        - inventory_hostname == xray_lead_host
+        - hostvars[item].xray_os is not defined or hostvars[item].xray_arch is not defined
+
+    - name: Make sure every xray host defines xray_os and xray_arch
+      ansible.builtin.assert:
+        that:
+          - xray_hosts_missing_platform | default([]) | length == 0
+        fail_msg: >-
+          Для хостов {{ xray_hosts_missing_platform | default([]) | join(', ') }}
+          не заданы xray_os/xray_arch — создайте
+          inventory/host_vars/<hostname>.yml, например:
+          xray_os: linux, xray_arch: 64.
+      when: inventory_hostname == xray_lead_host
+
+    - name: Collect target platforms from host vars
+      ansible.builtin.set_fact:
+        xray_os_list: "{{ xray_run_hosts | map('extract', hostvars, 'xray_os') | unique | list }}"
+        xray_arch_list: "{{ xray_run_hosts | map('extract', hostvars, 'xray_arch') | unique | list }}"
+      when: inventory_hostname == xray_lead_host
+
+    - name: Make sure the selected hosts share one platform
+      ansible.builtin.assert:
+        that:
+          - xray_os_list | length == 1
+          - xray_arch_list | length == 1
+        fail_msg: >-
+          У выбранных хостов [xray] разные xray_os/xray_arch
+          (OS: {{ xray_os_list | join(', ') }}; arch: {{ xray_arch_list | join(', ') }}).
+          Запускайте плейбук отдельно для каждой платформы,
+          выбирая хосты одной платформы в --limit.
+      when: inventory_hostname == xray_lead_host
+
+    - name: Determine the asset name for this platform
+      ansible.builtin.set_fact:
+        xray_asset_name: "Xray-{{ xray_os_list[0] }}-{{ xray_arch_list[0] }}.zip"
+        xray_staging_dir: "{{ xray_staging_root }}/{{ xray_os_list[0] }}-{{ xray_arch_list[0] }}"
+      when: inventory_hostname == xray_lead_host
+
+    - name: Query the latest release from the GitHub API
+      ansible.builtin.uri:
+        url: "{{ xray_release_api_url }}"
+        headers:
+          Accept: "application/vnd.github+json"
+      register: release_info
+      when: inventory_hostname == xray_lead_host
+
+    - name: Find the asset in the release
+      ansible.builtin.set_fact:
+        xray_asset: "{{ release_info.json.assets | selectattr('name', 'equalto', xray_asset_name) | list }}"
+      when: inventory_hostname == xray_lead_host
+
+    - name: Make sure the asset exists in the release
+      ansible.builtin.assert:
+        that:
+          - xray_asset | length == 1
+        fail_msg: >-
+          В релизе {{ release_info.json.tag_name }} нет ассета {{ xray_asset_name }}.
+          Доступные Xray-*:
+          {{ release_info.json.assets | map(attribute='name') | select('search', '^Xray-') | join(', ') }}
+      when: inventory_hostname == xray_lead_host
+
+    - name: Create the staging directory on the controller
+      ansible.builtin.file:
+        path: "{{ xray_staging_dir }}"
+        state: directory
+        mode: "0700"
+      when: inventory_hostname == xray_lead_host
+
+    - name: Download the checksums file
+      ansible.builtin.uri:
+        url: "{{ xray_asset[0].browser_download_url }}.dgst"
+        return_content: true
+      register: checksums_file
+      when: inventory_hostname == xray_lead_host
+
+    - name: Extract the SHA256 checksum
+      # dgst-файл содержит строки "SHA2-256= <hex>" — вытаскиваем хеш одним
+      # regex_replace (dotall). Без regex_search с group-аргументами и без
+      # split('\n'): Jinja не обрабатывает backslash-escapes вроде '\n' и
+      # '\1' в строковых литералах, а YAML не может передать реальный
+      # перевод строки (фолдится в пробел).
+      ansible.builtin.set_fact:
+        xray_sha256: "{{ checksums_file.content | regex_replace('(?s)^.*?SHA2-256=[ \\t]*([0-9a-f]{64})\\s.*$', '\\1') }}"
+      when: inventory_hostname == xray_lead_host
+
+    - name: Make sure the checksum was found
+      ansible.builtin.assert:
+        that:
+          - xray_sha256 | length == 64
+        fail_msg: >-
+          Не удалось извлечь SHA256 из файла контрольных сумм
+          {{ xray_asset_name }}.dgst. Содержимое:
+          {{ checksums_file.content }}
+      when: inventory_hostname == xray_lead_host
+
+    - name: Download the release archive and verify SHA256
+      ansible.builtin.get_url:
+        url: "{{ xray_asset[0].browser_download_url }}"
+        dest: "{{ xray_staging_dir }}/{{ xray_asset_name }}"
+        mode: "0644"
+        checksum: "sha256:{{ xray_sha256 }}"
+        timeout: 120
+      when: inventory_hostname == xray_lead_host
+
+    - name: Unpack the release archive
+      ansible.builtin.unarchive:
+        src: "{{ xray_staging_dir }}/{{ xray_asset_name }}"
+        dest: "{{ xray_staging_dir }}"
+      when: inventory_hostname == xray_lead_host
+
+    - name: Save the release version marker
+      ansible.builtin.copy:
+        content: "{{ release_info.json.tag_name }}"
+        dest: "{{ xray_staging_dir }}/version.txt"
+        mode: "0644"
+      when: inventory_hostname == xray_lead_host
+
+    - name: Check the required files were unpacked
+      ansible.builtin.find:
+        paths: "{{ xray_staging_dir }}"
+        patterns:
+          - "xray"
+          - "geoip.dat"
+          - "geosite.dat"
+        file_type: file
+      register: staged_files
+      when: inventory_hostname == xray_lead_host
+
+    - name: Make sure all required files are staged
+      ansible.builtin.assert:
+        that:
+          - staged_files.files | length == 3
+        fail_msg: >-
+          В архиве {{ xray_asset_name }} не хватает файлов: найдено
+          {{ staged_files.files | length }} из 3 (xray, geoip.dat, geosite.dat).
+      when: inventory_hostname == xray_lead_host
+
+- name: Upgrade xray on target hosts
+  hosts: xray
+  serial: 1           # по одному серверу
+  gather_facts: true
+  become: false       # файлы в $HOME — от пользователя; sudo только на systemd-задачах
+
+  vars:
+    xray_dir: "{{ ansible_facts['env']['HOME'] }}/opt/xray"
+    xray_binary: "{{ xray_dir }}/xray"
+    xray_config: "{{ xray_dir }}/config.json"
+    xray_files: ["xray", "geoip.dat", "geosite.dat"]
+    # всё, что должно существовать на хосте ДО остановки сервиса;
+    # config.json не заменяется, но нужен для config-теста нового бинарника
+    xray_required_files: "{{ xray_files + ['config.json'] }}"
+    # staging на управляющей машине (создан плеем 1); lookup('env') —
+    # окружение контроллера, а не хоста
+    xray_staging_root: "{{ lookup('env', 'HOME') }}/.cache/xray-upgrade"
+    staging_dir_path: "{{ xray_staging_root }}/{{ xray_os }}-{{ xray_arch }}"
+
+  pre_tasks:
+    - name: Read the release version marker from the controller
+      ansible.builtin.slurp:
+        src: "{{ staging_dir_path }}/version.txt"
+      delegate_to: localhost
+      register: version_marker
+
+    - name: Determine the release version
+      ansible.builtin.set_fact:
+        xray_version: "{{ version_marker.content | b64decode | trim }}"
+
+    - name: Make sure the version marker is valid
+      ansible.builtin.assert:
+        that:
+          - xray_version is match('^v')
+        fail_msg: >-
+          {{ inventory_hostname }}: не удалось прочитать версию релиза из
+          {{ staging_dir_path }}/version.txt — запускайте плейбук целиком,
+          плей 1 скачивает релиз на управляющую машину.
+
+    - name: Show what is about to happen
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} — обновление xray-core до {{ xray_version }}"
+
+  tasks:
+    # --- Проверки (до остановки сервиса) ---
+    - name: Collect service facts
+      ansible.builtin.service_facts:
+
+    - name: Make sure xray.service exists
+      ansible.builtin.assert:
+        that:
+          - "'xray.service' in ansible_facts['services']"
+        fail_msg: "{{ inventory_hostname }}: systemd-сервис xray.service не найден."
+
+    - name: Check the xray install directory
+      ansible.builtin.stat:
+        path: "{{ xray_dir }}"
+      register: xray_dir_stat
+
+    - name: Make sure the install directory exists
+      ansible.builtin.assert:
+        that:
+          - xray_dir_stat.stat.exists
+          - xray_dir_stat.stat.isdir
+        fail_msg: "{{ inventory_hostname }}: каталог {{ xray_dir }} не найден."
+
+    - name: Check the required files exist
+      ansible.builtin.find:
+        paths: "{{ xray_dir }}"
+        patterns: "{{ xray_required_files }}"
+        file_type: file
+      register: current_files
+
+    - name: Make sure all required files exist
+      ansible.builtin.assert:
+        that:
+          - current_files.files | length == 4
+        fail_msg: >-
+          {{ inventory_hostname }}: в {{ xray_dir }} не хватает файлов —
+          найдено {{ current_files.files | length }} из 4
+          (xray, geoip.dat, geosite.dat, config.json).
+
+    # --- Обновление (шаги 5–10) с откатом при ошибке ---
+    - name: Upgrade xray
+      block:
+        - name: Stop xray.service
+          ansible.builtin.systemd:
+            name: "xray.service"
+            state: "stopped"
+          become: true
+
+        - name: Backup the current files
+          ansible.builtin.copy:
+            src: "{{ xray_dir }}/{{ item }}"
+            dest: "{{ xray_dir }}/{{ item }}.old"
+            remote_src: true
+            mode: "preserve"          # сохранить права исходных файлов
+          loop: "{{ xray_files }}"
+          register: backup_result     # для rescue: откат только если бэкап был в этом прогоне
+
+        - name: Clear the error log
+          ansible.builtin.copy:
+            content: ""
+            dest: "{{ xray_dir }}/error.log"
+            mode: "0644"
+
+        - name: Install the new files from the release archive
+          ansible.builtin.copy:
+            src: "{{ staging_dir_path }}/{{ item }}"
+            dest: "{{ xray_dir }}/{{ item }}"
+            mode: "{{ '0755' if item == 'xray' else '0644' }}"
+          loop: "{{ xray_files }}"
+          timeout: 900            # не висеть вечно: 15 минут на все три файла
+
+        - name: Test the configuration with the new binary
+          ansible.builtin.command:
+            argv:
+              - "{{ xray_binary }}"
+              - "-c"
+              - "{{ xray_config }}"
+              - "-test"
+          register: config_test
+          changed_when: false
+
+        - name: Make sure the configuration test passed
+          ansible.builtin.assert:
+            that:
+              - config_test.rc == 0
+              - "'Configuration OK.' in config_test.stdout"
+            fail_msg: >-
+              {{ inventory_hostname }}: config-тест не пройден (rc={{ config_test.rc }}).
+              stdout: {{ config_test.stdout }}
+              stderr: {{ config_test.stderr }}
+
+        - name: Start xray.service
+          ansible.builtin.systemd:
+            name: "xray.service"
+            state: "started"
+          become: true
+
+        - name: Make sure the service is active
+          ansible.builtin.command:
+            argv: ["systemctl", "is-active", "xray.service"]
+          register: service_state
+          until: service_state.rc == 0
+          retries: 5
+          delay: 2
+          changed_when: false
+
+        - name: Report success
+          ansible.builtin.debug:
+            msg: "{{ inventory_hostname }}: xray обновлён до {{ xray_version }}, сервис активен"
+
+      rescue:
+        - name: Find the backup files
+          ansible.builtin.find:
+            paths: "{{ xray_dir }}"
+            patterns: ["*.old"]
+            file_type: file
+          register: backup_files
+
+        # Откат выполняется только на бэкапы, созданные в этом же прогоне:
+        # если падение случилось раньше бэкапа (например, на stop сервиса),
+        # *.old с прошлого успеха — это предыдущая-предыдущая версия, и их
+        # восстановление стало бы тихим downgrade'ом. В этом случае файлы
+        # на диске вообще не изменялись — достаточно поднять сервис.
+        - name: Restore the previous files from backups made in this run
+          ansible.builtin.copy:
+            src: "{{ item.path }}"
+            dest: "{{ item.path | regex_replace('\\.old$', '') }}"
+            remote_src: true
+            mode: "preserve"          # сохранить права исходных файлов
+          loop: "{{ backup_files.files }}"
+          register: restore_result
+          when: backup_result is defined and backup_result is not failed
+
+        - name: Start xray.service
+          ansible.builtin.systemd:
+            name: "xray.service"
+            state: "started"
+          become: true
+
+        - name: Report the failure and fail
+          ansible.builtin.fail:
+            msg: >-
+              {{ inventory_hostname }}: обновление не удалось —
+              {{ 'выполнен откат к предыдущей версии' if restore_result is changed else 'файлы не изменялись, откат не выполнялся' }},
+              сервис запущен. Причина — задача "{{ ansible_failed_task.name }}".
+
+- name: Clean up the staging directory on the controller
+  hosts: xray
+  connection: local      # очистка выполняется на управляющей машине
+  gather_facts: false
+  become: false
+
+  vars:
+    xray_lead_host: "{{ ansible_play_hosts_all | first }}"
+    xray_staging_root: "{{ lookup('env', 'HOME') }}/.cache/xray-upgrade"
+
+  tasks:
+    - name: Remove the staging directory
+      ansible.builtin.file:
+        path: "{{ xray_staging_root }}"
+        state: absent
+      when: inventory_hostname == xray_lead_host

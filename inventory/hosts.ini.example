@@ -1,17 +1,27 @@
 [all]
-alpha   ansible_host=alpha.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
-beta    ansible_host=beta.local     ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_ed25519
-gamma   ansible_host=gamma.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
-delta   ansible_host=delta.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_ed25519
-omega   ansible_host=omega.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
+vortex      ansible_host=vortex     ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
+marvel      ansible_host=marvel     ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
+serenity    ansible_host=serenity   ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
+clarity     ansible_host=clarity    ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
+knopik      ansible_host=knopik89   ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
+kmmax_fvds  ansible_host=kmmax      ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
+octagon     ansible_host=octagon    ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
 
-[group-1]
-alpha
-beta
+[ingress]
+vortex
+marvel
 
-[group-2]
-gamma
-delta
+[egress]
+serenity
+clarity
 
-[group-3]
-omega
+[kmmax]
+kmmax_fvds
+octagon
+
+[xray]
+vortex
+serenity
+marvel
+clarity
+knopik

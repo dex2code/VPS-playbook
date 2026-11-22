@@ -1,0 +1,4 @@
+# --- Xray (playbooks/xray-upgrade.yml) ---
+# Платформа релиза: из них собирается имя ассета Xray-<xray_os>-<xray_arch>.zip
+xray_os: linux
+xray_arch: 64

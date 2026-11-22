@@ -8,6 +8,7 @@ Ansible-плейбуки для обслуживания парка VPS под *
 |---|---|
 | `playbooks/ping.yml` | Диагностика: связь, ОС/ядро, hostname, uptime. |
 | `playbooks/apt-upgrade.yml` | Плановое обслуживание: `apt` update + dist-upgrade, очистка, перезагрузка. Хосты обрабатываются по одному (`serial: 1`). |
+| `playbooks/xray-upgrade.yml` | Обновление xray-core: последний релиз с GitHub (SHA256), замена файлов, config-тест, перезапуск сервиса. При ошибке — откат к `*.old` (только если бэкапы созданы в этом же прогоне). |
 
 ## Требования
 
@@ -35,6 +36,7 @@ pip install pre-commit && pre-commit install          # опционально: 
 source .venv/bin/activate                            # обязательно перед любой командой
 ansible-playbook playbooks/ping.yml                  # диагностика всех хостов
 ansible-playbook playbooks/apt-upgrade.yml           # обновление + reboot, по одному хосту
+ansible-playbook playbooks/xray-upgrade.yml          # обновление xray-core (группа [xray])
 ansible-playbook playbooks/ping.yml --limit vortex   # один хост
 ```
 
