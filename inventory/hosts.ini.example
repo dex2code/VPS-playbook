@@ -1,27 +1,21 @@
 [all]
-vortex      ansible_host=vortex     ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
-marvel      ansible_host=marvel     ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
-serenity    ansible_host=serenity   ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
-clarity     ansible_host=clarity    ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
-knopik      ansible_host=knopik89   ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
-kmmax_fvds  ansible_host=kmmax      ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
-octagon     ansible_host=octagon    ansible_port=22     ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/id_ed25519
+alpha   ansible_host=alpha.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
+beta    ansible_host=beta.local     ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_ed25519
+gamma   ansible_host=gamma.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
+delta   ansible_host=delta.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_ed25519
+omega   ansible_host=omega.local    ansible_port=22 ansible_user=deployer   ansible_ssh_private_key_file=~/.ssh/deployer_rsa
 
-[ingress]
-vortex
-marvel
+# Конвенция: ролевые группы — с суффиксом _grp. Встроенные группы all и
+# ungrouped зарезервированы и суффикс не получают: все хосты определяются
+# в [all], роль — в остальных группах.
 
-[egress]
-serenity
-clarity
+[one_grp]
+alpha
+beta
 
-[kmmax]
-kmmax_fvds
-octagon
+[two_grp]
+gamma
+delta
 
-[xray]
-vortex
-serenity
-marvel
-clarity
-knopik
+[three_grp]
+omega

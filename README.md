@@ -28,6 +28,7 @@ pip install pre-commit && pre-commit install          # опционально: 
 ```
 
 `inventory/hosts.ini` не коммитится (в `.gitignore`) — там реальные адреса и пути к ключам.
+Ролевые группы в инвентори — с суффиксом `_grp` (`[xray_grp]`); встроенная группа `all` (в ней определяются все хосты) и `ungrouped` зарезервированы и суффикс не получают.
 Линт также гоняется в CI (`.github/workflows/lint.yml`) на каждый push/PR.
 
 ## Запуск
@@ -36,7 +37,7 @@ pip install pre-commit && pre-commit install          # опционально: 
 source .venv/bin/activate                            # обязательно перед любой командой
 ansible-playbook playbooks/ping.yml                  # диагностика всех хостов
 ansible-playbook playbooks/apt-upgrade.yml           # обновление + reboot, по одному хосту
-ansible-playbook playbooks/xray-upgrade.yml          # обновление xray-core (группа [xray])
+ansible-playbook playbooks/xray-upgrade.yml          # обновление xray-core (группа [xray_grp])
 ansible-playbook playbooks/ping.yml --limit vortex   # один хост
 ```
 

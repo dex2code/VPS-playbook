@@ -12,6 +12,7 @@ All remote hosts run **Debian**. Package manager is `apt`, Python interpreter `/
 - `ansible.cfg` sets `become = false` — every task doesn't escalate to root by default. Override per-playbook with `become: true`.
 - Inventory path is relative: `inventory/hosts.ini` (not the Ansible default).
 - Host key checking is **enabled** in config (`host_key_checking = true`). Do not disable it; on first connect to a new host accept the key manually (e.g. plain `ssh`) rather than turning checking off.
+- Inventory role groups are named with the `_grp` suffix (`xray_grp`, `ingress_grp`, ...). The reserved built-in `all` stays canonical: all hosts are defined in `[all]`, fleet-wide playbooks target bare `all`, and global defaults stay in `group_vars/all.yml`.
 
 ## Key files
 | File | Purpose |
@@ -25,7 +26,7 @@ All remote hosts run **Debian**. Package manager is `apt`, Python interpreter `/
 source .venv/bin/activate                              # activate venv first!
 ansible-playbook playbooks/ping.yml                    # connectivity + diagnostics on all hosts
 ansible-playbook playbooks/apt-upgrade.yml             # maintenance: apt upgrade + reboot (serial: 1)
-ansible-playbook playbooks/xray-upgrade.yml            # upgrade xray-core (inventory group [xray]; release downloaded on controller)
+ansible-playbook playbooks/xray-upgrade.yml            # upgrade xray-core (inventory group [xray_grp]; release downloaded on controller)
 ansible-playbook playbooks/ping.yml --limit vortex     # single host (see inventory/hosts.ini for aliases)
 ansible-playbook playbooks/ping.yml -i <other.ini>     # alternate inventory
 ```

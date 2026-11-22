@@ -3,11 +3,11 @@
 # Обновление xray-core до последнего релиза (XTLS/xray-core)
 #
 # Плей 1 — скачивание релиза на управляющую машину: плей
-#          адресован группе [xray], но все задачи выполняются
+#          адресован группе [xray_grp], но все задачи выполняются
 #          локально (connection: local) и только на первом хосте
 #          отбора (xray_lead_host) — GitHub API, проверка SHA256,
 #          распаковка в ~/.cache/xray-upgrade/<os>-<arch>/.
-# Плей 2 — хосты группы [xray] (по SSH, serial: 1): проверки
+# Плей 2 — хосты группы [xray_grp] (по SSH, serial: 1): проверки
 #          (включая config.json), остановка сервиса (sudo),
 #          бэкапы *.old, замена файлов, config-тест, запуск
 #          сервиса. При ошибке сервис поднимается; откат к
@@ -17,7 +17,7 @@
 # Плей 3 — очистка ~/.cache/xray-upgrade на управляющей машине
 #          (снова connection: local).
 #
-# Контроль-плеи (1 и 3) сознательно адресованы [xray], а не
+# Контроль-плеи (1 и 3) сознательно адресованы [xray_grp], а не
 # localhost: implicit localhost исключается --limit, и при
 # --limit vortex плей на localhost был бы пропущен целиком.
 # connection: local выполняет задачи на управляющей машине
@@ -28,14 +28,14 @@
 # собирается имя ассета Xray-<xray_os>-<xray_arch>.zip,
 # например Xray-linux-64.zip.
 #
-# Если в группе [xray] хосты разных платформ — запускайте с
+# Если в группе [xray_grp] хосты разных платформ — запускайте с
 # --limit на хосты одной платформы (перечисление через запятую
 # или глоббы). Скачивание — одно на весь запуск, после
 # успешного обновления каталог ~/.cache/xray-upgrade удаляется.
 # ============================================================
 
 - name: Fetch the latest xray-core release to the controller
-  hosts: xray
+  hosts: xray_grp
   connection: local      # все задачи плея выполняются на управляющей машине
   gather_facts: false
   become: false
@@ -58,7 +58,7 @@
         that:
           - xray_run_hosts | length > 0
         fail_msg: >-
-          Не выбрано ни одного хоста группы [xray]: добавьте хосты в
+          Не выбрано ни одного хоста группы [xray_grp]: добавьте хосты в
           inventory/hosts.ini или проверьте --limit.
       when: inventory_hostname == xray_lead_host
 
@@ -93,7 +93,7 @@
           - xray_os_list | length == 1
           - xray_arch_list | length == 1
         fail_msg: >-
-          У выбранных хостов [xray] разные xray_os/xray_arch
+          У выбранных хостов [xray_grp] разные xray_os/xray_arch
           (OS: {{ xray_os_list | join(', ') }}; arch: {{ xray_arch_list | join(', ') }}).
           Запускайте плейбук отдельно для каждой платформы,
           выбирая хосты одной платформы в --limit.
@@ -205,7 +205,7 @@
       when: inventory_hostname == xray_lead_host
 
 - name: Upgrade xray on target hosts
-  hosts: xray
+  hosts: xray_grp
   serial: 1           # по одному серверу
   gather_facts: true
   become: false       # файлы в $HOME — от пользователя; sudo только на systemd-задачах
@@ -394,7 +394,7 @@
               сервис запущен. Причина — задача "{{ ansible_failed_task.name }}".
 
 - name: Clean up the staging directory on the controller
-  hosts: xray
+  hosts: xray_grp
   connection: local      # очистка выполняется на управляющей машине
   gather_facts: false
   become: false
